@@ -2117,6 +2117,7 @@ dependencies = [
 name = "tt"
 version = "0.0.0"
 dependencies = [
+ "smallvec",
  "smol_str",
  "span",
  "stdx",

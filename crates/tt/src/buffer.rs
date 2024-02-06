@@ -1,6 +1,8 @@
 //! Stateful iteration over token trees.
 //!
 //! We use this as the source of tokens for parser.
+use smallvec::{smallvec, SmallVec};
+
 use crate::{Leaf, Subtree, TokenTree};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -36,18 +38,24 @@ pub struct TokenBuffer<'t, Span> {
 trait TokenList<'a, Span> {
     fn entries(
         &self,
-    ) -> (Vec<(usize, (&'a Subtree<Span>, Option<&'a TokenTree<Span>>))>, Vec<Entry<'a, Span>>);
+        entries: &mut Vec<Entry<'a, Span>>,
+        child_callback: impl FnMut((usize, (&'a Subtree<Span>, Option<&'a TokenTree<Span>>))),
+    );
 }
 
 impl<'a, Span> TokenList<'a, Span> for &'a [TokenTree<Span>] {
     fn entries(
         &self,
-    ) -> (Vec<(usize, (&'a Subtree<Span>, Option<&'a TokenTree<Span>>))>, Vec<Entry<'a, Span>>)
-    {
+        entries: &mut Vec<Entry<'a, Span>>,
+        mut child_callback: impl FnMut((usize, (&'a Subtree<Span>, Option<&'a TokenTree<Span>>))),
+    ) {
+        println!(
+            "children {} entry {}",
+            std::mem::size_of::<(usize, (&'a Subtree<Span>, Option<&'a TokenTree<Span>>))>(),
+            std::mem::size_of::<Entry<'a, Span>>()
+        );
+
         // Must contain everything in tokens and then the Entry::End
-        let start_capacity = self.len() + 1;
-        let mut entries = Vec::with_capacity(start_capacity);
-        let mut children = vec![];
         for (idx, tt) in self.iter().enumerate() {
             match tt {
                 TokenTree::Leaf(_) => {
@@ -55,25 +63,22 @@ impl<'a, Span> TokenList<'a, Span> for &'a [TokenTree<Span>] {
                 }
                 TokenTree::Subtree(subtree) => {
                     entries.push(Entry::End(None));
-                    children.push((idx, (subtree, Some(tt))));
+                    child_callback((idx, (subtree, Some(tt))));
                 }
             }
         }
-        (children, entries)
     }
 }
 
 impl<'a, Span> TokenList<'a, Span> for &'a Subtree<Span> {
     fn entries(
         &self,
-    ) -> (Vec<(usize, (&'a Subtree<Span>, Option<&'a TokenTree<Span>>))>, Vec<Entry<'a, Span>>)
-    {
+        entries: &mut Vec<Entry<'a, Span>>,
+        mut child_callback: impl FnMut((usize, (&'a Subtree<Span>, Option<&'a TokenTree<Span>>))),
+    ) {
         // Must contain everything in tokens and then the Entry::End
-        let mut entries = vec![];
-        let mut children = vec![];
-        entries.push(Entry::End(None));
-        children.push((0usize, (*self, None)));
-        (children, entries)
+        child_callback((0usize, (*self, None)));
+        entries.push(Entry::End(None))
     }
 }
 
@@ -98,9 +103,10 @@ impl<'t, Span> TokenBuffer<'t, Span> {
         buffers: &mut Vec<Box<[Entry<'t, Span>]>>,
         next: Option<EntryPtr>,
     ) -> usize {
+        entries.push(Entry::End(next));
+
         let (children, mut entries) = tokens.entries();
 
-        entries.push(Entry::End(next));
         let res = buffers.len();
         buffers.push(entries.into_boxed_slice());
 
